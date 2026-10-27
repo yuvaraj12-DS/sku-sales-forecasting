@@ -156,40 +156,54 @@ Because the client dataset is deliberately not in Git, a fresh clone cannot run 
 - MAPE target was not achieved.
 - This is a portfolio project, not yet a production deployment. The current Docker workflow reproduces predictions for the historical test period. Future improvements include forecasting newly arriving weeks, automated scheduling, monitoring, and deployment.
 
-## Dockerized Batch Prediction
 
-The project includes a Docker-based batch prediction workflow that loads a saved Random Forest model and generates forecasts using the prepared feature dataset.
+## Dockerized Batch Prediction and Forward Forecasting
+
+The project supports two Docker-based workflows using the saved Random Forest model and prepared historical feature dataset.
 
 ### Prerequisites
 
 - Docker Desktop installed and running.
-- A trained model at `models/random_forest_final.joblib`.
 - The processed feature dataset at `data/processed/sales_model_features.csv`.
+- For batch mode, a trained model at `models/random_forest_final.joblib`.
 
-The model and dataset are kept outside the Docker image and mounted into the container at runtime.
+The dataset and models remain outside the Docker image and are mounted into the container at runtime.
 
-### Run Batch Prediction on Windows
+### Historical Batch Prediction
 
-From the project root, execute:
+Run from the project root in Windows PowerShell:
 
 ```powershell
 .\scripts\run_batch_docker.ps1
 ```
 
-The script builds the Docker image and runs batch prediction in a container. It uses the pinned dependencies in `requirements-docker.txt`.
+This loads the saved final-test model and reproduces predictions for the historical test period.
 
-### Output
+Output: `reports/batch_predictions_test.csv`
 
-The prediction results are written to:
+### Forward Forecasting
 
-`reports/batch_predictions_test.csv`
+Run:
 
-The output contains store and product identifiers, sales week, source-record provenance, and the forecast quantity.
+```powershell
+.\scripts\run_batch_docker.ps1 -Mode forward
+```
+
+This trains a separate Random Forest using eligible historical data and generates one-week-ahead forecasts for products recorded in the latest historical week that have sufficient sales history.
+
+Outputs:
+
+- `reports/next_week_forecast.csv`
+- `models/random_forest_forward.joblib`
 
 ### Validation
 
-The containerized workflow was checked against the existing final-test predictions. All 165,464 product-week rows matched, with a maximum absolute prediction difference of approximately `1e-12`.
+The Docker batch predictions were compared against the original final-test predictions for all 165,464 rows. The maximum absolute prediction difference was approximately `1e-12`.
 
-### Scope
+The forward-forecast workflow was also verified inside Docker, generating 23,511 product forecasts.
 
-The current batch workflow evaluates the existing historical test split from September 16, 2024, through September 30, 2024. It demonstrates reproducible inference from a saved model; it does not yet ingest new sales data or produce forecasts for newly arriving weeks.
+### Scope and Limitations
+
+The source data ends on September 30, 2024. The current forward forecast is therefore a historical demonstration for October 7, 2024, not a forecast for the present date.
+
+Inventory availability, stockouts, promotions, costs, and assortment data are unavailable. Products without recorded sales in the latest historical week are excluded from the forward-forecast cohort. This is a portfolio project, not yet a production deployment.

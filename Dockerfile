@@ -12,5 +12,5 @@ RUN python -m pip install --no-cache-dir --upgrade pip \
     && python -m pip install --no-cache-dir -r requirements-docker.txt
 
 COPY src/predict_batch.py src/predict_batch.py
-
+COPY src/forecast_next_week.py src/forecast_next_week.py
 CMD ["python", "src/predict_batch.py"]
