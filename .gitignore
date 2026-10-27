@@ -47,3 +47,10 @@ reports/*.log
 
 # Logs
 *.log
+
+# MLflow local tracking data
+mlflow.db
+mlflow.db-shm
+mlflow.db-wal
+mlartifacts/
+mlruns/

@@ -1,6 +1,4 @@
-
 from pathlib import Path
-
 import numpy as np
 import pandas as pd
 
@@ -54,6 +52,7 @@ def add_sales_history_features(df: pd.DataFrame) -> pd.DataFrame:
 
     return result
 
+
 def main():
     df = pd.read_csv(PANEL_PATH, low_memory=False)
 
@@ -75,7 +74,6 @@ def main():
         raise ValueError("Duplicate store-product-week records found.")
 
     df = add_sales_history_features(df)
-
     # Use the last price and category known before the forecast week.
     df["PRICE_LAST_KNOWN"] = (
         df.groupby("PRODUCT_CODE", sort=False)["AVG_UNIT_PRICE"]

@@ -1,6 +1,6 @@
 
 from pathlib import Path
-
+import mlflow
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import RandomForestRegressor
@@ -10,6 +10,12 @@ from sklearn.pipeline import make_pipeline
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+tracking_db = PROJECT_ROOT / "mlflow.db"
+mlflow.set_tracking_uri(
+        f"sqlite:///{tracking_db.as_posix()}"
+     )
+mlflow.set_experiment("sku-sales-forecasting-rf-tuning")
+
 FEATURES_PATH = PROJECT_ROOT / "data" / "processed" / "sales_model_features.csv"
 REPORTS_DIR = PROJECT_ROOT / "reports"
 
@@ -86,68 +92,142 @@ def main():
 
     fold_results = []
 
-    for fold_week in FOLD_WEEKS:
-        train_mask = (
-            df["SPLIT"].eq("train")
-            & df["FEATURE_ELIGIBLE"]
-            & df["SALES_WEEK"].lt(fold_week)
-        )
-        validation_mask = (
-            df["SPLIT"].eq("train")
-            & df["FEATURE_ELIGIBLE"]
-            & df["SALES_WEEK"].eq(fold_week)
-        )
+    for candidate_name, parameters in CANDIDATES.items():
+        candidate_results = []
 
-        train_df = df.loc[train_mask]
-        validation_df = df.loc[validation_mask]
+        with mlflow.start_run(run_name=candidate_name):
+            mlflow.log_params(parameters)
+            mlflow.log_param("feature_count", len(FEATURE_COLUMNS))
+            mlflow.log_param("fold_count", len(FOLD_WEEKS))
 
-        if train_df.empty or validation_df.empty:
-            raise ValueError(
-                f"Empty training or validation data for fold {fold_week.date()}."
-            )
-
-        X_train = train_df[FEATURE_COLUMNS]
-        y_train = train_df["ACTUAL"].to_numpy(dtype=float)
-        X_validation = validation_df[FEATURE_COLUMNS]
-        y_validation = validation_df["ACTUAL"].to_numpy(dtype=float)
-
-        baseline = validation_df["ROLLING_MEAN_4"].to_numpy(dtype=float)
-        baseline_metrics = calculate_metrics(y_validation, baseline)
-
-        print(
-            f"\nFold week: {fold_week.date()} | "
-            f"Training rows: {len(train_df):,} | "
-            f"Validation rows: {len(validation_df):,}"
-        )
-
-        for candidate_name, parameters in CANDIDATES.items():
-            model = make_pipeline(
-                SimpleImputer(strategy="median", add_indicator=True),
-                RandomForestRegressor(
-                    **parameters,
-                    n_jobs=-1,
-                    random_state=42,
-                ),
-            )
-
-            print(f"Fitting candidate: {candidate_name}")
-            model.fit(X_train, y_train)
-            predictions = np.maximum(model.predict(X_validation), 0)
-
-            model_metrics = calculate_metrics(
-                y_validation,
-                predictions,
-            )
-
-            fold_results.append({
+            mlflow.set_tags({
                 "candidate": candidate_name,
-                "fold_week": fold_week.date().isoformat(),
-                "train_rows": len(train_df),
-                "validation_rows": len(validation_df),
-                **model_metrics,
-                "baseline_MAE": baseline_metrics["MAE"],
-                "baseline_WAPE_pct": baseline_metrics["WAPE_pct"],
+                "model_type": "RandomForestRegressor",
+                "validation_strategy": "chronological_folds",
+                "script": "src/RF_model_tuning.py",
             })
+
+            for fold_index, fold_week in enumerate(
+                FOLD_WEEKS, start=1
+            ):
+                train_mask = (
+                    df["SPLIT"].eq("train")
+                    & df["FEATURE_ELIGIBLE"]
+                    & df["SALES_WEEK"].lt(fold_week)
+                )
+                validation_mask = (
+                    df["SPLIT"].eq("train")
+                    & df["FEATURE_ELIGIBLE"]
+                    & df["SALES_WEEK"].eq(fold_week)
+                )
+
+                train_df = df.loc[train_mask]
+                validation_df = df.loc[validation_mask]
+
+                if train_df.empty or validation_df.empty:
+                    raise ValueError(
+                        "Empty training or validation data for "
+                        f"fold {fold_week.date()}."
+                    )
+
+                X_train = train_df[FEATURE_COLUMNS]
+                y_train = train_df["ACTUAL"].to_numpy(dtype=float)
+                X_validation = validation_df[FEATURE_COLUMNS]
+                y_validation = validation_df["ACTUAL"].to_numpy(
+                    dtype=float
+                )
+
+                baseline = validation_df[
+                    "ROLLING_MEAN_4"
+                ].to_numpy(dtype=float)
+                baseline_metrics = calculate_metrics(
+                    y_validation, baseline
+                )
+
+                model = make_pipeline(
+                    SimpleImputer(
+                        strategy="median",
+                        add_indicator=True,
+                    ),
+                    RandomForestRegressor(
+                        **parameters,
+                        n_jobs=-1,
+                        random_state=42,
+                    ),
+                )
+
+                print(
+                    f"\nCandidate: {candidate_name} | "
+                    f"Fold: {fold_week.date()} | "
+                    f"Training rows: {len(train_df):,} | "
+                    f"Validation rows: {len(validation_df):,}"
+                )
+
+                model.fit(X_train, y_train)
+                predictions = np.maximum(
+                    model.predict(X_validation), 0
+                )
+
+                model_metrics = calculate_metrics(
+                    y_validation, predictions
+                )
+
+                fold_result = {
+                    "candidate": candidate_name,
+                    "fold_week": fold_week.date().isoformat(),
+                    "train_rows": len(train_df),
+                    "validation_rows": len(validation_df),
+                    **model_metrics,
+                    "baseline_MAE": baseline_metrics["MAE"],
+                    "baseline_WAPE_pct": (
+                        baseline_metrics["WAPE_pct"]
+                    ),
+                }
+
+                fold_results.append(fold_result)
+                candidate_results.append(fold_result)
+
+                mlflow.log_metrics({
+                    f"fold_{fold_index}_MAE": float(
+                        model_metrics["MAE"]
+                    ),
+                    f"fold_{fold_index}_WAPE_pct": float(
+                        model_metrics["WAPE_pct"]
+                    ),
+                    f"fold_{fold_index}_baseline_MAE": float(
+                        baseline_metrics["MAE"]
+                    ),
+                    f"fold_{fold_index}_baseline_WAPE_pct": float(
+                        baseline_metrics["WAPE_pct"]
+                    ),
+                })
+
+            candidate_df = pd.DataFrame(candidate_results)
+
+            mlflow.log_metrics({
+                "mean_fold_MAE": float(
+                    candidate_df["MAE"].mean()
+                ),
+                "mean_fold_WAPE_pct": float(
+                    candidate_df["WAPE_pct"].mean()
+                ),
+                "mean_baseline_MAE": float(
+                    candidate_df["baseline_MAE"].mean()
+                ),
+                "mean_baseline_WAPE_pct": float(
+                    candidate_df["baseline_WAPE_pct"].mean()
+                ),
+            })
+
+            mlflow.set_tag(
+                "selection_metric",
+                "mean_fold_WAPE_pct",
+            )
+
+            print(
+                f"Mean validation WAPE: "
+                f"{candidate_df['WAPE_pct'].mean():.4f}%"
+            )
 
     results = pd.DataFrame(fold_results)
 
