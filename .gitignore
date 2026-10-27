@@ -1,0 +1,49 @@
+﻿# Python bytecode and caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Environment variables and secrets
+.env
+.env.*
+!.env.example
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Editor and operating system
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Raw client data
+data/raw/*
+!data/raw/.gitkeep
+
+# Processed client data
+data/processed/*
+!data/processed/.gitkeep
+
+# Model artifacts
+models/*
+!models/.gitkeep
+
+# Generated reports and row-level outputs
+reports/*.csv
+reports/*.parquet
+reports/*.xlsx
+reports/*.joblib
+reports/*.pkl
+reports/*.json
+reports/*.log
+
+# Logs
+*.log
