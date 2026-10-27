@@ -154,4 +154,42 @@ Because the client dataset is deliberately not in Git, a fresh clone cannot run 
 - Inventory availability, stockouts, promotions, costs, and assortment are unavailable.
 - The final test spans only three weeks.
 - MAPE target was not achieved.
-- This is not a production deployment. See [`docs/mlops_roadmap.md`](docs/mlops_roadmap.md) for an incremental path to tests, CI, experiment tracking, data validation, packaging, deployment, and monitoring.
+- This is a portfolio project, not yet a production deployment. The current Docker workflow reproduces predictions for the historical test period. Future improvements include forecasting newly arriving weeks, automated scheduling, monitoring, and deployment.
+
+## Dockerized Batch Prediction
+
+The project includes a Docker-based batch prediction workflow that loads a saved Random Forest model and generates forecasts using the prepared feature dataset.
+
+### Prerequisites
+
+- Docker Desktop installed and running.
+- A trained model at `models/random_forest_final.joblib`.
+- The processed feature dataset at `data/processed/sales_model_features.csv`.
+
+The model and dataset are kept outside the Docker image and mounted into the container at runtime.
+
+### Run Batch Prediction on Windows
+
+From the project root, execute:
+
+```powershell
+.\scripts\run_batch_docker.ps1
+```
+
+The script builds the Docker image and runs batch prediction in a container. It uses the pinned dependencies in `requirements-docker.txt`.
+
+### Output
+
+The prediction results are written to:
+
+`reports/batch_predictions_test.csv`
+
+The output contains store and product identifiers, sales week, source-record provenance, and the forecast quantity.
+
+### Validation
+
+The containerized workflow was checked against the existing final-test predictions. All 165,464 product-week rows matched, with a maximum absolute prediction difference of approximately `1e-12`.
+
+### Scope
+
+The current batch workflow evaluates the existing historical test split from September 16, 2024, through September 30, 2024. It demonstrates reproducible inference from a saved model; it does not yet ingest new sales data or produce forecasts for newly arriving weeks.
