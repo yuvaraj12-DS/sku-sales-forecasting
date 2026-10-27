@@ -1,6 +1,7 @@
 
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 
@@ -9,6 +10,53 @@ DATA_PATH = PROJECT_ROOT / "data" / "raw" / "Sales_Data.csv"
 
 KEY_COLUMNS = ["STORE_CODE", "PRODUCT_CODE", "SALES_WEEK"]
 
+REQUIRED_COLUMNS = [
+    "STORE_CODE",
+    "PRODUCT_CODE",
+    "CATEGORY_CODE",
+    "SALES_WEEK",
+    "ACTUAL",
+    "AVG_UNIT_PRICE",
+]
+
+
+def validate_sales_data(df: pd.DataFrame) -> None:
+    missing_columns = sorted(set(REQUIRED_COLUMNS) - set(df.columns))
+    if missing_columns:
+        raise ValueError(f"Missing required columns: {missing_columns}")
+
+    key_columns = ["STORE_CODE", "PRODUCT_CODE"]
+
+    if df[key_columns].isna().any().any():
+        raise ValueError("Store and product codes must not be missing.")
+
+    parsed_dates = pd.to_datetime(
+    df["SALES_WEEK"],
+    errors="coerce",
+    format="mixed",
+    )
+
+    if parsed_dates.isna().any():
+        raise ValueError("SALES_WEEK contains missing or invalid dates.")
+
+    keys = pd.DataFrame({
+        "STORE_CODE": df["STORE_CODE"],
+        "PRODUCT_CODE": df["PRODUCT_CODE"],
+        "SALES_WEEK": parsed_dates,
+    })
+
+    if keys.duplicated().any():
+        raise ValueError("Duplicate store-product-week records found.")
+
+    for column in ["ACTUAL", "AVG_UNIT_PRICE"]:
+        values = pd.to_numeric(df[column], errors="coerce")
+
+        if values.isna().any() or not np.isfinite(
+            values.to_numpy(dtype=float)
+        ).all():
+            raise ValueError(
+                f"{column} must contain finite numeric values."
+            )
 
 def main():
     df = pd.read_csv(DATA_PATH, low_memory=False)

@@ -11,6 +11,49 @@ PROCESSED_DIR = PROJECT_ROOT / "data" / "processed"
 REPORTS_DIR = PROJECT_ROOT / "reports"
 
 
+def add_sales_history_features(df: pd.DataFrame) -> pd.DataFrame:
+    required_columns = {"PRODUCT_CODE", "SALES_WEEK", "ACTUAL"}
+    missing_columns = required_columns - set(df.columns)
+
+    if missing_columns:
+        raise ValueError(
+            f"Missing required columns: {sorted(missing_columns)}"
+        )
+
+    result = (
+        df.sort_values(["PRODUCT_CODE", "SALES_WEEK"])
+        .reset_index(drop=True)
+        .copy()
+    )
+
+    product_groups = result.groupby("PRODUCT_CODE", sort=False)
+
+    for lag in (1, 2, 4, 8):
+        result[f"LAG_{lag}"] = product_groups["ACTUAL"].shift(lag)
+
+    for window in (4, 8):
+        result[f"ROLLING_MEAN_{window}"] = (
+            result.groupby("PRODUCT_CODE", sort=False)["ACTUAL"]
+            .transform(
+                lambda series: series.shift(1).rolling(
+                    window=window,
+                    min_periods=1,
+                ).mean()
+            )
+        )
+
+    result["ROLLING_STD_4"] = (
+        result.groupby("PRODUCT_CODE", sort=False)["ACTUAL"]
+        .transform(
+            lambda series: series.shift(1).rolling(
+                window=4,
+                min_periods=2,
+            ).std()
+        )
+    )
+
+    return result
+
 def main():
     df = pd.read_csv(PANEL_PATH, low_memory=False)
 
@@ -31,42 +74,7 @@ def main():
     if df.duplicated(keys).any():
         raise ValueError("Duplicate store-product-week records found.")
 
-    product_groups = df.groupby("PRODUCT_CODE", sort=False)
-
-    # Historical sales from earlier weeks only.
-    for lag in (1, 2, 4, 8):
-        df[f"LAG_{lag}"] = product_groups["ACTUAL"].shift(lag)
-
-    # Rolling statistics exclude the current week's target.
-    df["ROLLING_MEAN_4"] = (
-        df.groupby("PRODUCT_CODE", sort=False)["ACTUAL"]
-        .transform(
-            lambda series: series.shift(1).rolling(
-                window=4,
-                min_periods=1,
-            ).mean()
-        )
-    )
-
-    df["ROLLING_MEAN_8"] = (
-        df.groupby("PRODUCT_CODE", sort=False)["ACTUAL"]
-        .transform(
-            lambda series: series.shift(1).rolling(
-                window=8,
-                min_periods=1,
-            ).mean()
-        )
-    )
-
-    df["ROLLING_STD_4"] = (
-        df.groupby("PRODUCT_CODE", sort=False)["ACTUAL"]
-        .transform(
-            lambda series: series.shift(1).rolling(
-                window=4,
-                min_periods=2,
-            ).std()
-        )
-    )
+    df = add_sales_history_features(df)
 
     # Use the last price and category known before the forecast week.
     df["PRICE_LAST_KNOWN"] = (
