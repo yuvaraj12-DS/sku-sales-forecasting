@@ -39,3 +39,6 @@ jobs:
 
       - name: Run tests
         run: python -m pytest -v
+        
+      - name: Build Docker image
+        run: docker build --tag sku-sales-forecasting:ci .
