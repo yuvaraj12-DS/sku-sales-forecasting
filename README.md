@@ -157,19 +157,21 @@ Because the client dataset is deliberately not in Git, a fresh clone cannot run 
 - This is a portfolio project, not yet a production deployment. The current Docker workflow reproduces predictions for the historical test period. Future improvements include forecasting newly arriving weeks, automated scheduling, monitoring, and deployment.
 
 
-## Dockerized Batch Prediction and Forward Forecasting
 
-The project supports two Docker-based workflows using the saved Random Forest model and prepared historical feature dataset.
+## Dockerized Forecasting and Monitoring
+
+The project provides three Docker-based workflows for historical batch prediction, forward forecasting, and forecast monitoring.
 
 ### Prerequisites
 
 - Docker Desktop installed and running.
-- The processed feature dataset at `data/processed/sales_model_features.csv`.
-- For batch mode, a trained model at `models/random_forest_final.joblib`.
+- The prepared feature dataset at `data/processed/sales_model_features.csv`.
+- A saved final-test model at `models/random_forest_final.joblib` for batch mode.
+- A previously generated `reports/next_week_forecast.csv` for monitoring mode.
 
-The dataset and models remain outside the Docker image and are mounted into the container at runtime.
+The feature dataset and models are mounted into the container at runtime rather than copied into the Docker image.
 
-### Historical Batch Prediction
+### 1. Historical Batch Prediction
 
 Run from the project root in Windows PowerShell:
 
@@ -177,11 +179,11 @@ Run from the project root in Windows PowerShell:
 .\scripts\run_batch_docker.ps1
 ```
 
-This loads the saved final-test model and reproduces predictions for the historical test period.
+This loads the saved final-test model and generates predictions for the historical test period.
 
 Output: `reports/batch_predictions_test.csv`
 
-### Forward Forecasting
+### 2. Forward Forecasting
 
 Run:
 
@@ -189,21 +191,49 @@ Run:
 .\scripts\run_batch_docker.ps1 -Mode forward
 ```
 
-This trains a separate Random Forest using eligible historical data and generates one-week-ahead forecasts for products recorded in the latest historical week that have sufficient sales history.
+This trains a separate Random Forest using eligible historical observations and forecasts one week ahead for products recorded in the latest historical week that have sufficient sales history.
 
 Outputs:
 
 - `reports/next_week_forecast.csv`
 - `models/random_forest_forward.joblib`
 
+### 3. Forecast Monitoring
+
+Run forward forecasting first, then execute:
+
+```powershell
+.\scripts\run_batch_docker.ps1 -Mode monitor
+```
+
+The monitoring workflow checks:
+
+- Missing and non-finite forecast quantities.
+- Negative forecasts and duplicate forecast records.
+- Forecast-date alignment.
+- Expected product-cohort coverage.
+- Input-data freshness.
+
+It writes a monitoring summary to `reports/forecast_monitoring_summary.csv`.
+
+The overall status is:
+
+- `PASS`: Forecast validation succeeds and the input data is fresh.
+- `WARNING`: Forecast validation succeeds, but the input data is stale or future-dated.
+- `FAIL`: Forecast validation detects a problem. The monitoring command exits with a non-zero status.
+
 ### Validation
 
-The Docker batch predictions were compared against the original final-test predictions for all 165,464 rows. The maximum absolute prediction difference was approximately `1e-12`.
+The historical Docker batch predictions were compared with the original final-test predictions for all 165,464 rows. The maximum absolute difference was approximately `1e-12`.
 
-The forward-forecast workflow was also verified inside Docker, generating 23,511 product forecasts.
+The forward-forecast workflow was verified in Docker, generating 23,511 forecasts for October 7, 2024.
+
+The monitoring workflow was also run in Docker. It correctly returned `PASS` for forecast validation and `WARNING` for freshness.
 
 ### Scope and Limitations
 
-The source data ends on September 30, 2024. The current forward forecast is therefore a historical demonstration for October 7, 2024, not a forecast for the present date.
+The source dataset ends on September 30, 2024. Therefore, the October 7, 2024 forecast is a historical demonstration, not a current sales forecast.
 
-Inventory availability, stockouts, promotions, costs, and assortment data are unavailable. Products without recorded sales in the latest historical week are excluded from the forward-forecast cohort. This is a portfolio project, not yet a production deployment.
+Inventory availability, stockouts, promotions, costs, and assortment information are unavailable. Products without source-recorded sales in the latest historical week are excluded from the forward-forecast cohort.
+
+This is a portfolio project, not yet a production deployment. Scheduling, monitoring with newly arriving data, and production deployment remain future improvements.

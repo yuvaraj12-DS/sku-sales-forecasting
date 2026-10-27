@@ -13,4 +13,6 @@ RUN python -m pip install --no-cache-dir --upgrade pip \
 
 COPY src/predict_batch.py src/predict_batch.py
 COPY src/forecast_next_week.py src/forecast_next_week.py
+COPY src/monitor_forecast.py src/monitor_forecast.py
+
 CMD ["python", "src/predict_batch.py"]
