@@ -236,4 +236,42 @@ The source dataset ends on September 30, 2024. Therefore, the October 7, 2024 fo
 
 Inventory availability, stockouts, promotions, costs, and assortment information are unavailable. Products without source-recorded sales in the latest historical week are excluded from the forward-forecast cohort.
 
-This is a portfolio project, not yet a production deployment. Scheduling, monitoring with newly arriving data, and production deployment remain future improvements.
+## Automated Forecast Pipeline
+
+The pipeline checks the source sales file and decides whether forecasting needs to be rerun.
+
+### Run locally
+
+```powershell
+python src/run_forecast_pipeline.py
+```
+
+Run through the PowerShell launcher with logging:
+
+```powershell
+.\scripts\run_forecast_pipeline.ps1
+```
+
+### Pipeline behaviour
+
+- Rebuilds the weekly panel and features when new or changed source data requires processing.
+- Trains the forward forecasting model and generates a next-week forecast.
+- Runs forecast validation and freshness monitoring.
+- Skips retraining when the source data has not changed and no new forecast period is available.
+- Saves pipeline logs to `reports/pipeline_runner.log`.
+
+### Outputs
+
+- `reports/next_week_forecast.csv`
+- `reports/forecast_monitoring_summary.csv`
+- `reports/pipeline_runner.log`
+
+### Data limitations
+
+The current sample ends on September 30, 2024. Consequently, its October 7, 2024 forecast is historical and must not be treated as a current forecast. Freshness monitoring reports this limitation.
+
+The final test WAPE is approximately 41.37%, compared with 42.67% for the baseline. The model improves on the baseline, but its forecast errors remain substantial.
+
+### Scheduled execution
+
+Windows Task Scheduler runs the PowerShell launcher daily at 9:00 AM local time. The laptop must be available and the task must have permission to execute. Review the pipeline log and Task Scheduler's last result to verify execution.

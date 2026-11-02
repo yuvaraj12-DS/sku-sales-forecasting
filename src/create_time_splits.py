@@ -8,28 +8,93 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DATA_PATH = PROJECT_ROOT / "data" / "raw" / "Sales_Data.csv"
 REPORTS_DIR = PROJECT_ROOT / "reports"
 
+REQUIRED_COLUMNS = [
+    "SALES_WEEK",
+    "PRODUCT_CODE",
+    "ACTUAL",
+]
 
-def main():
-    df = pd.read_csv(DATA_PATH, low_memory=False)
+
+def build_time_splits(df):
+    missing_columns = sorted(set(REQUIRED_COLUMNS) - set(df.columns))
+    if missing_columns:
+        raise ValueError(
+            f"Missing required columns: {missing_columns}"
+        )
+
+    df = df.copy()
+
     df["SALES_WEEK"] = pd.to_datetime(
         df["SALES_WEEK"],
         errors="raise",
     )
+    df["ACTUAL"] = pd.to_numeric(
+        df["ACTUAL"],
+        errors="raise",
+    )
 
-    weeks = sorted(df["SALES_WEEK"].drop_duplicates().tolist())
+    if df["SALES_WEEK"].isna().any():
+        raise ValueError("SALES_WEEK contains missing dates.")
 
-    if len(weeks) != 18:
+    if df["ACTUAL"].isna().any():
+        raise ValueError("ACTUAL contains missing values.")
+
+    observed_weeks = pd.DatetimeIndex(
+        df["SALES_WEEK"].drop_duplicates().sort_values()
+    )
+
+    if observed_weeks.empty:
+        raise ValueError("No sales weeks found.")
+
+    # Include calendar weeks even if a week has no source records.
+    weeks = pd.date_range(
+        start=observed_weeks.min(),
+        end=observed_weeks.max(),
+        freq="7D",
+    )
+
+    calendar_weeks = set(weeks)
+    off_calendar_weeks = [
+        week for week in observed_weeks
+        if week not in calendar_weeks
+    ]
+
+    if off_calendar_weeks:
         raise ValueError(
-            f"Expected 18 distinct weeks, but found {len(weeks)}. "
-            "Review the split design before proceeding."
+            "Sales dates do not follow a consistent weekly cadence. "
+            f"Examples: {off_calendar_weeks[:5]}"
         )
 
+    if len(weeks) < 7:
+        raise ValueError(
+            f"Expected at least 7 weekly periods, found {len(weeks)}. "
+            "Need at least one training week, three validation weeks, "
+            "and three test weeks."
+        )
+
+    # Keep the final three weeks for testing and the previous
+    # three weeks for validation.
+    train_end = len(weeks) - 6
+    validation_end = len(weeks) - 3
+
     split_by_week = {}
-    split_by_week.update(dict.fromkeys(weeks[:12], "train"))
-    split_by_week.update(dict.fromkeys(weeks[12:15], "validation"))
-    split_by_week.update(dict.fromkeys(weeks[15:], "test"))
+    split_by_week.update(
+        dict.fromkeys(weeks[:train_end], "train")
+    )
+    split_by_week.update(
+        dict.fromkeys(
+            weeks[train_end:validation_end],
+            "validation",
+        )
+    )
+    split_by_week.update(
+        dict.fromkeys(weeks[validation_end:], "test")
+    )
 
     df["SPLIT"] = df["SALES_WEEK"].map(split_by_week)
+
+    if df["SPLIT"].isna().any():
+        raise ValueError("Some source rows could not be assigned a split.")
 
     week_plan = pd.DataFrame({
         "SALES_WEEK": weeks,
@@ -42,7 +107,7 @@ def main():
             start_week=("SALES_WEEK", "min"),
             end_week=("SALES_WEEK", "max"),
             weeks=("SALES_WEEK", "nunique"),
-            rows=("PRODUCT_CODE", "size"),
+            rows=("SALES_WEEK", "size"),
             products=("PRODUCT_CODE", "nunique"),
             total_actual=("ACTUAL", "sum"),
             mean_actual=("ACTUAL", "mean"),
@@ -50,6 +115,18 @@ def main():
         .reindex(["train", "validation", "test"])
         .reset_index()
     )
+
+    return week_plan, split_summary
+
+
+def main():
+    if not DATA_PATH.is_file():
+        raise FileNotFoundError(
+            f"Raw sales data not found: {DATA_PATH}"
+        )
+
+    df = pd.read_csv(DATA_PATH, low_memory=False)
+    week_plan, split_summary = build_time_splits(df)
 
     REPORTS_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -63,7 +140,12 @@ def main():
     print(week_plan.to_string(index=False))
 
     print("\n=== SPLIT SUMMARY ===")
-    print(split_summary.to_string(index=False))
+    print(
+        split_summary.to_string(
+            index=False,
+            float_format=lambda value: f"{value:.4f}",
+        )
+    )
 
     print(f"\nSaved: {week_plan_path}")
     print(f"Saved: {summary_path}")
